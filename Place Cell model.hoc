@@ -1,0 +1,559 @@
+load_file("nrngui.hoc") //carica l'interfaccia grafica
+use_mcell_ran4(1)        // genera n random
+cvode_active(1)        //se (1) allora il time step è variabile se (0) allora è fisso a 0.025ms
+
+print "Place Cell model"
+
+numaxon=1
+numsoma=1
+numbasal=58
+numapical=74
+numtrunk=67
+
+dist=1
+rel=0.1
+
+//xopen: apri il file ed esegui
+xopen("geoc73166.hoc")             // geometry file
+xopen("fixnseg.hoc")           
+
+Rm = 28000
+RmDend = Rm/1
+RmSoma = Rm
+RmAx = Rm
+
+Cm    = 1
+CmSoma= Cm
+CmAx  = Cm
+CmDend = Cm*1
+
+RaAll= 150
+RaSoma=150  
+RaAx = 50
+
+Vrest = -65
+dt = 0.1
+gna =  .025
+AXONM = 5
+gkdr = 0.01
+celsius = 35.0  
+KMULT =  0.04
+KMULTP = 0.04
+gcan=0.0//005
+gcal=0.0//005
+gcat=0.0//005
+ghd=0.00005
+KM= 0.003
+nash=0
+flag=0
+
+
+//definizione variabili
+objref stim, stim2, stim3, stim4, distrx, distry, cdistry, rb, rd, re, rf, rg, rh, b, c, g, h, h1, h2, h3, l, m, n, p, synv1, synv2, synv3
+objref ns[5][15], syn[5][15], synmda[5][15], nc[5][15], ncs[5][15]
+objref xv, yv, dxv, dyv, num[5], r, r2
+objref inp[5], obl[5], apic_vec[15], pes_vec[15],pesnmda_vec[15], b1, apc
+objref infile
+objref sref, blist[numtrunk], str1, str2, aplist, rlist, clist
+
+
+apic_vec = new Vector()
+apic_vec.append(48,49,72,57,53,63,66,65,52,16,30,34,40,44)
+pes_vec = new Vector()
+pesnmda_vec = new Vector()
+
+
+ps=3
+																							
+pes_vec.append(0.000012*ps,0.000001*ps,0.00001*ps,0.00005*ps,0.00005*ps,0.00001*ps,0.0002*ps,0.00001*ps,0.0001*ps,0.0002*ps,0.00005*ps,0.0007*ps,0.00005*ps,0.00003*ps)
+pesnmda_vec.append(0.001,0.002,0.0026,0.001,0.001,0.001,0.0005,0.0014,0.001,0.003,0.001,0.001,0.001,0.001,0.001)
+
+//generates trajectory (from M. Hasselmo)
+//%THIS SECTION CREATES A RANDOM TRAJECTORY OF A SIMULATED RAT IN AN OPEN FIELD.
+r = new Random()
+r.uniform(0,1)
+r2 = new Random()
+r2.normal(0,3)
+xv=new Vector()
+yv=new Vector()
+for z=0, 2 {num[z] = new Vector()} 
+
+xmax=90
+xmin=0
+ymax=90
+ymin=0
+
+b = new VBox()
+b.intercept(1)
+c = new Graph()
+c.size(xmin, xmax, ymin, ymax)
+c.exec_menu("10% Zoom out")
+c.beginline()
+b.intercept(0)
+b.map()
+
+//setup environment
+for z=0,2 {
+	inp[z] = new Vector()
+	obl[z] = new Vector()
+	}
+inp[0].append(0,ymax,7,ymax)
+inp[1].append(83,ymax,xmax,ymax)
+inp[2].append(xmin,ymin,xmin,7)
+
+for z=0, 2 {
+	for k=0, 6 {
+	xo=inp[z].x[0]+(inp[z].x[2]-inp[z].x[0])*k/6 
+	yo=inp[z].x[1]+(inp[z].x[3]-inp[z].x[1])*k/6 
+	c.mark(xo, yo, "S", 5, z+2,1)
+	//print "object ",z, k, xo,yo
+	}
+}
+	
+strdef filename, dend, trunk
+infile = new File()
+infile.ropen("trajectory.txt") 
+print "... reading trajectory"
+while (!infile.eof()) {
+	xv.append(infile.scanvar())
+	yv.append(infile.scanvar())
+	num[0].append(infile.scanvar())
+	num[1].append(infile.scanvar())
+	num[2].append(infile.scanvar())
+}
+
+print " last point ", xv.x[xv.size()-1], yv.x[yv.size()-1], num[0].x[xv.size()-1], num[1].x[xv.size()-1], num[2].x[xv.size()-1]
+rd = new Random()
+rd.MCellRan4(111)
+rd.uniform(0,10)
+r = new Random()
+r.uniform(0,1)
+
+//inserisce le proprietà passive
+
+forsec "axon" {insert pas e_pas=Vrest g_pas = 1/RmAx Ra=RaAx cm=CmAx}
+forsec "soma" {insert pas e_pas=Vrest g_pas = 1/RmSoma Ra=RaSoma cm=CmSoma}
+forsec "dendrite"{insert pas e_pas=Vrest g_pas = 1/RmDend Ra=RaAll cm=CmDend}
+forsec "user5" {insert pas e_pas=Vrest g_pas = 1/RmDend Ra=RaAll cm=CmDend}
+
+access soma
+
+freq=50
+geom_nseg()   //definisce il numero di segmenti presi all'interno dell'area centrata in 0.5 nel soma
+tot=0
+forall {tot=tot+nseg} //conta i segmenti
+//print tot, "segments"
+distance() //è sottointeso 0 , distanza dal soma
+
+tstop= 1600000
+
+
+//crea la prima finestra 
+h = new VBox()
+h.intercept(1)
+m = new Graph()
+m.size(0,tstop,-70,30) //xi,xf,yi,yf
+m.addvar("soma.v(0.5)",1,1,2*tstop,0,2)
+m.xaxis(1)
+//crea la seconda finestra
+l = new Graph()
+l.size(0,740,0,100)
+l.xaxis(1)
+l.exec_menu("10% Zoom out")
+l.color(1)
+l.label(0.4,0.8," peak AP")
+	
+xpanel("")
+xbutton("runm ", "runm()")
+xpanel()
+h.intercept(0)
+h.map()
+
+
+h1 = new VBox()
+h1.intercept(1)
+synv1 = new Graph()
+synv1.size(0,tstop,-70,30) //xi,xf,yi,yf
+synv1.addvar("apical_dendrite[65].v(0.20643072)",1,1,2*tstop,0,2)
+synv1.addvar("apical_dendrite[52].v(0.79127272)",2,1,2*tstop,0,2)
+synv1.addvar("apical_dendrite[16].v(0.6032814)",3,1,2*tstop,0,2)
+synv1.addvar("apical_dendrite[30].v(0.842286)",4,1,2*tstop,0,2)
+synv1.addvar("apical_dendrite[34].v(0.12861663)",5,1,2*tstop,0,2)
+synv1.addvar("apical_dendrite[40].v(0.90763255)",6,1,2*tstop,0,2)
+synv1.addvar("apical_dendrite[44].v(0.42593558)",7,1,2*tstop,0,2)
+synv1.xaxis(1)
+synv1.label(0.8,0.9,"apical_dendrite[65].v(0.20643072)")
+synv1.label(0.8,0.8,"apical_dendrite[52].v(0.79127272)",2,1,0,0,2)
+synv1.label(0.8,0.7,"apical_dendrite[16].v(0.6032814)",2,1,0,0,3)
+synv1.label(0.8,0.6,"apical_dendrite[30].v(0.842286)",2,1,0,0,4)
+synv1.label(0.8,0.5,"apical_dendrite[34].v(0.12861663)",2,1,0,0,5)
+synv1.label(0.8,0.4,"apical_dendrite[40].v(0.90763255)",2,1,0,0,6)
+synv1.label(0.8,0.3,"apical_dendrite[44].v(0.42593558)",2,1,0,0,7)
+h1.intercept(0)
+h1.map()
+
+h2 = new VBox()
+h2.intercept(1)
+synv2 = new Graph()
+synv2.size(0,tstop,-70,30) //xi,xf,yi,yf
+synv2.addvar("apical_dendrite[48].v(0.99250947)",1,1,2*tstop,0,2)
+synv2.addvar("apical_dendrite[49].v(0.41365581)",2,1,2*tstop,0,2)
+synv2.addvar("apical_dendrite[72].v(0.97597133)",3,1,2*tstop,0,2)
+synv2.addvar("apical_dendrite[57].v(0.60467046)",4,1,2*tstop,0,2)
+synv2.addvar("apical_dendrite[53].v(0.0054151204)",5,1,2*tstop,0,2)
+synv2.addvar("apical_dendrite[63].v(0.19420175)",6,1,2*tstop,0,2)
+synv2.addvar("apical_dendrite[66].v(0.6970037)",7,1,2*tstop,0,2)
+synv2.xaxis(1)
+synv2.label(0.8,0.9,"apical_dendrite[48].v(0.99250947)")
+synv2.label(0.8,0.8,"apical_dendrite[49].v(0.41365581)",2,1,0,0,2)
+synv2.label(0.8,0.7,"apical_dendrite[72].v(0.97597133)",2,1,0,0,3)
+synv2.label(0.8,0.6,"apical_dendrite[57].v(0.60467046)",2,1,0,0,4)
+synv2.label(0.8,0.5,"apical_dendrite[53].v(0.0054151204)",2,1,0,0,5)
+synv2.label(0.8,0.4,"apical_dendrite[63].v(0.19420175)",2,1,0,0,6)
+synv2.label(0.8,0.3,"apical_dendrite[66].v(0.6970037)",2,1,0,0,7)
+h2.intercept(0)
+h2.map()
+
+h3 = new VBox()
+h3.intercept(1)
+synv3 = new Graph()
+synv3.size(0,tstop,-70,30) //xi,xf,yi,yf
+synv3.addvar("user5[10].v(0.5)",1,1,2*tstop,0,2)
+synv3.addvar("user5[17].v(0.5)",2,1,2*tstop,0,2)
+synv3.addvar("user5[57].v(0.5)",3,1,2*tstop,0,2)
+synv3.addvar("user5[66].v(0.5)",4,1,2*tstop,0,2)
+synv3.xaxis(1)
+synv3.label(0.8,0.9,"user5[10].v(0.5)")
+synv3.label(0.8,0.8,"user5[17].v(0.5)",2,1,0,0,2)
+synv3.label(0.8,0.7,"user5[57].v(0.5)",2,1,0,0,3)
+synv3.label(0.8,0.6,"user5[66].v(0.5)",2,1,0,0,4)
+h3.intercept(0)
+h3.map()
+
+wmax=1 
+n = new Graph()
+n.size(0,tstop,0,wmax)
+graphList[0].append(n) // update a at every time step
+n.xaxis(1)
+
+
+//Shape Plot
+p = new PlotShape()
+p.exec_menu("Shape Plot")
+p.size(-194.658,304.758,-223.667,609.667)
+p.variable("v")
+p.show(0)
+
+
+forsec "axon" {   
+                insert nax gbar_nax=gna * AXONM	sh_nax=nash
+                insert kdr gkdrbar_kdr=gkdr
+                insert kap gkabar_kap = KMULTP*1
+				insert kmb gbar_kmb= KM
+}
+
+forsec "soma" {   
+		insert hd ghdbar_hd=ghd	vhalfl_hd=-73
+                insert na3 ar_na3=1 sh_na3=nash gbar_na3=gna
+                insert kdr gkdrbar_kdr=gkdr
+                insert kap gkabar_kap = KMULTP
+				insert kmb gbar_kmb= KM
+}
+
+for i=0, numbasal-1 dendrite[i] {
+		if (diam>0.35) {factor=1} else {factor=1}
+		insert hd ghdbar_hd=ghd vhalfl_hd=-73
+                insert na3 ar_na3=1 gbar_na3=gna*factor sh_na3=nash
+                insert kdr gkdrbar_kdr=gkdr*factor
+		insert kap gkabar_kap=0
+		insert kad gkabar_kad=0
+
+		for (x) if (x>0 && x<1) { xdist = distance(x)
+//                	if (xdist>500) {xdist=500}
+                	ghdbar_hd(x) = factor*ghd*(1+3*xdist/100)
+                		if (xdist > 100){
+					vhalfl_hd=-81
+                        		gkabar_kad(x) = factor*KMULT*(1+xdist/100)
+                			} else {
+					vhalfl_hd=-73
+                        		gkabar_kap(x) = factor*KMULTP*(1+xdist/100)
+               				}
+		}
+}
+                
+forsec "apical_dendrite" {
+	insert ds
+	if (diam>0.35) {factor=1} else {factor=1}
+		insert hd ghdbar_hd=ghd
+                insert na3 ar_na3=1 gbar_na3=gna*factor sh_na3=nash
+                insert kdr gkdrbar_kdr=gkdr*factor
+		insert kap gkabar_kap=0
+		insert kad gkabar_kad=0
+
+		for (x) if (x>0 && x<1) { xdist = distance(x)
+//                	if (xdist>500) {xdist=500}
+                	ghdbar_hd(x) = factor*ghd*(1+3*xdist/100)
+                		if (xdist > 100){
+					vhalfl_hd=-81
+                        		gkabar_kad(x) = factor*KMULT*(1+xdist/100)
+                			} else {
+					vhalfl_hd=-73
+                        		gkabar_kap(x) = factor*KMULTP*(1+xdist/100)
+               				}
+		}
+}
+
+forsec "user5" {
+	insert ds
+//	if (diam>0.5) {
+		insert hd ghdbar_hd=ghd
+                insert na3 ar_na3=1 gbar_na3=gna sh_na3=nash
+                insert kdr gkdrbar_kdr=gkdr
+		insert kap gkabar_kap=0
+		insert kad gkabar_kad=0
+
+		for (x) if (x>0 && x<1) { xdist = distance(x)
+//                	if (xdist>500) {xdist=500}
+                	ghdbar_hd(x) = ghd*(1+3*xdist/100)
+                		if (xdist > 100){
+					vhalfl_hd=-81
+                        		gkabar_kad(x) = KMULT*(1+xdist/100)
+                			} else {
+					vhalfl_hd=-73
+                        		gkabar_kap(x) = KMULTP*(1+xdist/100)
+               				}
+		}
+//	}
+}
+
+soma {
+apc = new APCount(.5)
+}
+
+//aggiungo un elettrodo di corrente
+
+rel=0.5
+amp=0.07
+dur=200
+del=89480
+
+user5[66] { 
+stim= new IClamp(rel)
+stim.amp=0.09
+stim.dur=dur
+stim.del=del*2//5500
+}
+
+user5[57] { //41, 19
+stim2= new IClamp(rel)
+stim2.amp=0.09 //0.07
+stim2.dur=dur
+stim2.del=del*2+dur//5700
+}
+
+user5[17] { 
+stim3= new IClamp(rel)
+stim3.amp=0.09
+stim3.dur=dur
+stim3.del=del*2+2*dur//5900
+}
+
+user5[10] { 
+stim4= new IClamp(rel)
+stim4.amp=0.12
+stim4.dur=800 //600
+stim4.del=del*2+3*dur//6100
+}
+
+
+proc sinapsirandom(){ 
+  
+  access soma 
+  re=new Random()
+  re.uniform(0,100)
+  re.MCellRan4()
+  rb=new Random()
+  rb.uniform(0,1) 
+  rb.MCellRan4()
+  pes=0
+  for cells=0,1 {
+		for orient=0,6{
+			ns[cells][orient]= new NetStim(.5)
+			ns[cells][orient].interval= 330
+			ns[cells][orient].number= 20000
+			ns[cells][orient].start= 10 //int(re.repick())
+			ns[cells][orient].seed(1)
+			print "seed 1"
+			ns[cells][orient].noise= 0.5		
+			syn[cells][orient]= new STDPE2bis(.5)
+			synmda[cells][orient]= new nmdanet(.5)
+			synmda[cells][orient].mg =1
+			nc[cells][orient]= new NetCon(ns[cells][orient],syn[cells][orient],0,0,pes_vec.x[pes])
+			ncs[cells][orient]= new NetCon(ns[cells][orient],synmda[cells][orient],0,0,pesnmda_vec.x[pes])
+			syn[cells][orient].srcnt4= cells
+			syn[cells][orient].srcnt3= orient
+			pes=pes+1
+			syn[cells][orient].srcnt4= cells
+			syn[cells][orient].srcnt3= orient
+			}}
+			
+			
+  location=0
+  for cells=0,1 {
+		for orient=0,6{	
+			tmp=rb.repick()     
+			apical_dendrite[apic_vec.x[location]]{
+			//print "location",location, " ",apic_vec.x[location]
+			syn[cells][orient].loc(tmp)
+			syn[cells][orient].srcnt1= apic_vec.x[location]
+			syn[cells][orient].srcnt2= tmp
+			synmda[cells][orient].loc(tmp)
+			print "SYN ","loc: ", secname(), ", syn: ", cells, orient, ", tmp: ",tmp
+			}
+			location=location+1
+			}}
+}
+
+proc move() {
+	if (t<del*2||t>del*2+3*200){ 
+	flag=1
+	posx=xv.x[totmoves] //totmoves=0
+    posy=yv.x[totmoves]
+	c.line(posx, posy)
+	c.flush() //Disegna effettivamente ciò che è stato inserito nella scena del grafico. 
+	doNotify() //Tutti i pannelli vengono aggiornati in modo che gli editor di campi mostrino i valori correnti.
+	for z=0, 1 {
+	for zz=0,num[z].x[totmoves]-1 {ns[z][zz].interval= 12}  
+	//for zz =0, 6 {print z, zz,  ns[z][zz].interval}
+	}
+	//for z=0, 1 {for zz=0,6 { print "z ", z , "zz ", zz , ns[z][zz].interval}}	
+	cvode.event(t+50,"move()") 
+	if (apc.n>nspikes) {
+	nspikes=apc.n //apc conta gli spike sul soma 
+	c.mark(posx, posy, "O",4,3,1)
+	print "spike location= ", posx," ",posy
+	}
+	if (totmoves<xv.size()-1) totmoves=totmoves+1
+	for z=0, 1 {for zz=0,6 {ns[z][zz].interval=330}}
+	//for z=0, 2 {for zz=0,4{ print z, zz, ns[z][zz].interval}}
+}else cvode.event(t+50,"move()")
+}
+					
+// procedura di inizializzazione 
+proc init() {
+	t=0
+        forall {
+        v=Vrest
+        if (ismembrane("nax") || ismembrane("na3")) {ena=55}
+        if (ismembrane("kdr") || ismembrane("kap") || ismembrane("kad")) {ek=-90}
+        if (ismembrane("hd") ) {ehd_hd=-30}
+	}
+	finitialize(Vrest)
+        fcurrent()
+
+        forall {
+	for (x) {
+	if (ismembrane("na3")||ismembrane("nax")){e_pas(x)=v(x)+(ina(x)+ik(x))/g_pas(x)}
+	if (ismembrane("hd")) {e_pas(x)=e_pas(x)+i_hd(x)/g_pas(x)}
+		}
+	}
+
+	cvode.re_init()
+	cvode.event(tstop)
+	access soma
+	deg=200
+	nspikes=0
+	totmoves=0
+	tpre=0
+	//II=0
+	cvode.event(30,"move()")
+	m.begin()
+	synv1.begin()
+	synv2.begin()
+	synv3.begin()
+}
+
+for i=0,13{print "peso ",i,": ", pes_vec.x[i]}
+
+npre=0
+		
+proc advance() {
+	
+	if (flag==1){
+			for z=0, 1 {for zz=0,6 {ns[z][zz].interval=330}}
+			for z=0, 1 {for zz=0,num[z].x[totmoves]-1 {ns[z][zz].interval= 12}}
+			flag=0
+			}
+	
+	fadvance()
+	m.plot(t)
+	m.flush()
+	synv1.plot(t)
+	synv1.flush()
+	synv2.plot(t)
+	synv2.flush()
+	synv3.plot(t)
+	synv3.flush()
+	p.flush()
+	doNotify()
+}
+
+proc runp() {
+run()
+	distrx=new Vector()
+	distry=new Vector()
+	forsec "apical_dendrite" {
+		for (x) if (x>0 && x<1) {
+			if (diam>=0) {
+			distrx.append(distance(x)) 
+			distry.append(vmax_ds(x)-Vrest)
+			}
+		}
+	}
+	distry.mark(l,distrx,"O",3,3,2)
+
+	distrx=new Vector()
+	distry=new Vector()
+	forsec "user5" {
+		for (x) if (x>0 && x<1) {
+			if (diam>=0) {
+			distrx.append(distance(x)) 
+			distry.append(vmax_ds(x)-Vrest)
+			}
+		}
+	}
+	distry.mark(l,distrx,"t",5,$1,1)
+	l.flush()
+	doNotify()
+
+}
+
+
+sinapsirandom()
+
+n.addexpr("nc[0][0].weight[1]/nc[0][0].weight[0]",1,1)
+n.addexpr("nc[0][1].weight[1]/nc[0][1].weight[0]",2,1)
+n.addexpr("nc[0][2].weight[1]/nc[0][2].weight[0]",3,1)
+n.addexpr("nc[0][3].weight[1]/nc[0][3].weight[0]",4,1)
+n.addexpr("nc[0][4].weight[1]/nc[0][4].weight[0]",5,1)
+n.addexpr("nc[0][5].weight[1]/nc[0][5].weight[0]",6,1)
+n.addexpr("nc[0][6].weight[1]/nc[0][6].weight[0]",7,1)
+
+n.addexpr("nc[1][0].weight[1]/nc[1][0].weight[0]",6,1)
+n.addexpr("nc[1][1].weight[1]/nc[1][1].weight[0]",7,1)
+n.addexpr("nc[1][2].weight[1]/nc[1][2].weight[0]",8,1)
+n.addexpr("nc[1][3].weight[1]/nc[1][3].weight[0]",9,1)
+n.addexpr("nc[1][4].weight[1]/nc[1][4].weight[0]",1,1)
+n.addexpr("nc[1][5].weight[1]/nc[1][5].weight[0]",2,1)
+n.addexpr("nc[1][6].weight[1]/nc[1][6].weight[0]",3,1)
+
+proc runm() {
+runp(1)
+}
+
+
+proc runm() {
+runp(1)
+}
+
+//
